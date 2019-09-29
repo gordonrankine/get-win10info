@@ -10,11 +10,11 @@ Gets Windows 10 Operating System details from a computer and generated a word do
 each can be used for different purposes. The report can either be basic or detailed. This script can run against a report endpoint. See examples for futher detials.
 
 .PARAMETER outDir
-This is the directory to be created.
+This is the directory where the xml files and reports are stored. If the directory doesn't exist it will be created.
 
 .PARAMETER mode
 [OPTIONAL] This is the mode the script runs in. There are 3 modes available. GatherAndReport, GatherOnly & ReportOnly. GatherAndReport will collect details and generate a word document. GatherOnly will collect
-details only. ReportOnly will constuct a word document from a provided xml file with previously gathered details. The default mode is GatherAndReport.
+details only. ReportOnly will construct a word document from a provided xml file with previously gathered details. The default mode is GatherAndReport.
 
 .PARAMETER endpoint
 [OPTIONAL] This is the name of the remote endpoint if the script is to gather information from a remote endpoint. If this parameter is not specified then the script will run against the endpoint
