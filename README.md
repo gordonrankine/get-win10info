@@ -24,7 +24,7 @@ This mode will only gather information from a Windows 10 computer but will not g
 
 #### ReportOnly
 
-This mode will generate a word report from a specified xml file that was created in either GatherAndReport or ReportOnly mode. When using this mode the -xmlReport parameter must be used. When using -xmlReport specify the location of the xml file created previously. This mode can also be used with the -reportMode parameter as mentioned above.
+This mode will generate a word report from a specified xml file that was created in either GatherAndReport or GatherOnly mode. When using this mode the -xmlReport parameter must be used. When using -xmlReport specify the location of the xml file created previously. This mode can also be used with the -reportMode parameter as mentioned above.
 
 ## Parameters
 
