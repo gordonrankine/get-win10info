@@ -1,4 +1,4 @@
-﻿#region ScriptInfo
+#region ScriptInfo
 
 <#
 
@@ -47,9 +47,12 @@ https://github.com/gordonrankine/get-win10info
 License:            MIT License
 Compatibility:      Windows 10
 Author:             Gordon Rankine
-Date:               29/09/2019
-Version:            1.0
+Date:               31/10/2020
+Version:            1.1
 PSSscriptAnalyzer:  Pass (with caveat). Run ScriptAnalyzer with PSAvoidUsingWMICmdlet. WMI over CIM as WMI is more versatile than CIM.
+Change Log:         Version  Date        Author          Comments
+                    1.0      29/09/2019  Gordon Rankine  Initial script
+                    1.1      31/10/2020  Gordon Rankine  Added Window System Assessment Tool (win32_winsat). Added blank lines to either side of script complete message.
 
 #>
 
@@ -331,6 +334,28 @@ Write-Output "[INFO] Script running in $mode mode."
         $warnings ++
         }
         #endregion GatherWMIComputerSystem
+
+        #region GatherWMIWinSat
+        $class = "win32_winsat" # Single item class
+        try{
+        Write-Output "[INFO] Getting details from class $class."
+        $props = ('cpuscore', 'd3dscore', 'diskscore', 'graphicsscore', 'memoryscore', 'timetaken', 'winsatassessmentstate', 'winsprlevel')
+        $wmi = Get-WmiObject -Namespace root/cimv2 -Class $class -ComputerName $endpoint -ErrorAction Stop | Select-Object $props
+        Add-Content $outfile "$tab<$class>"
+            foreach($prop in $props){
+            Add-Content $outfile "$tab$tab<$prop>$($wmi.$prop)</$prop>"
+            }
+        Add-Content $outfile "$tab</$class>"
+        }
+        catch{
+        Add-Content $outfile "$tab<$class>"
+        Add-Content $outfile "$tab$tab<errorcode>1</errorcode>"
+        Add-Content $outfile "$tab$tab<errortext>$_.Exception.Message</errortext>"
+        Add-Content $outfile "$tab</$class>"
+        Write-Output "[WARNING] There was an unexpected error while getting the $class class. Moving on to next section..."
+        $warnings ++
+        }
+        #endregion GatherWMIWinSat
 
         #region GatherWMINetworkAdapterConfiguration
         $class = "win32_networkadapterconfiguration" # Multi item class
@@ -2719,6 +2744,106 @@ Write-Output "[INFO] Script running in $mode mode."
     $selection.MoveDown() | Out-Null
     $selection.InsertNewPage()
     #endregion ReportWMIComputerSystem
+
+    #region ReportWMIWinSat
+    # BASIC
+    $selection.style = 'Heading 1'
+    $selection.TypeText("[WMI] Windows System Assessment Tool")
+    $selection.TypeParagraph()
+    $selection.TypeParagraph()
+
+    $selection.Style = 'Normal'
+    $selection.TypeText("This data is collected from the Win32_WinSat WMI class. For more information please go to https://docs.microsoft.com/en-us/windows/win32/winsat/win32-winsat")
+    $selection.TypeParagraph()
+    $selection.TypeParagraph()
+
+        if(($xml.info.win32_winsat).count -eq 0){
+        Write-Output "[WARNING] WMI WinSat details not found. Moving on to next section..."
+        $warnings ++
+        $selection.Style = 'Normal'
+        $selection.Font.Color="255"
+        $selection.TypeText("[WARNING] WMI WinSat data not found!")
+        $selection.TypeParagraph()
+        }
+        elseif(($xml.info.win32_winsat.errorcode) -eq 1){
+        Write-Output "[WARNING] WMI WinSat details not collected. Moving on to next section..."
+        $warnings ++
+        $selection.Style = 'Normal'
+        $selection.Font.Color="255"
+        $selection.TypeText("[WARNING] WMI WinSat data not collected!")
+        $selection.TypeParagraph()
+        $selection.TypeText("Reason for error: $($xml.info.win32_winsat.errortext)")
+        $selection.TypeParagraph()
+        }
+        else{
+        Write-Output "[INFO] Populating WMI WinSat table."
+
+        $table = $selection.Tables.add(
+        $selection.Range,
+        9,
+        2,
+        [Microsoft.Office.Interop.Word.WdDefaultTableBehavior]::wdWord9TableBehavior,
+        [Microsoft.Office.Interop.Word.WdAutoFitBehavior]::wdAutoFitWindow
+        )
+
+        $table.style = "Grid Table 4 - Accent 1"
+        $table.cell(1,1).range.text = "Item"
+        $table.cell(1,2).range.text = "Value"
+
+        $table.cell(2,1).range.text = "CPU Score"
+        $table.cell(2,2).range.text = $xml.info.win32_winsat.cpuscore
+
+        $table.cell(3,1).range.text = "D3D Score"
+        $table.cell(3,2).range.text = $xml.info.win32_winsat.d3dscore
+
+        $table.cell(4,1).range.text = "Disk Score"
+        $table.cell(4,2).range.text = $xml.info.win32_winsat.diskscore
+
+        $table.cell(5,1).range.text = "Graphics Score"
+        $table.cell(5,2).range.text = $xml.info.win32_winsat.graphicsscore
+
+        $table.cell(6,1).range.text = "Memory Score"
+        $table.cell(6,2).range.text = $xml.info.win32_winsat.memoryscore
+
+        $table.cell(7,1).range.text = "Time Taken"
+        $table.cell(7,2).range.text = $xml.info.win32_winsat.timetaken
+
+        $table.cell(8,1).range.text = "WinSat Assessment State"
+
+            if($xml.info.win32_winsat.winsatassessmentstate -eq 0){
+            $winSatAssessmentState = "State Unknown"
+            }
+            elseif($xml.info.win32_winsat.winsatassessmentstate -eq 1){
+            $winSatAssessmentState = "Valid"
+            }
+            elseif($xml.info.win32_winsat.winsatassessmentstate -eq 2){
+            $winSatAssessmentState = "Incoherent With Hardware"
+            }
+            elseif($xml.info.win32_winsat.winsatassessmentstate -eq 3){
+            $winSatAssessmentState = "No Assessement Available"
+            }
+            elseif($xml.info.win32_winsat.winsatassessmentstate -eq 4){
+            $winSatAssessmentState = "Invalid"
+            }
+            else{
+            $winSatAssessmentState = "$winSatAssessmentState [UNKNOWN]"
+            }
+
+        $table.cell(8,2).range.text = $winSatAssessmentState
+
+        $table.cell(9,1).range.text = "Win SPR Level"
+        $table.cell(9,2).range.text = $xml.info.win32_winsat.winsprlevel
+
+    $table.Rows.item(1).Headingformat=-1
+    $table.ApplyStyleFirstColumn = $false
+    $selection.InsertCaption(-2, ": [WMI] Windows System Assessment Tool", $null, 1, $false)
+
+    }
+
+    $selection.EndOf(15) | Out-Null
+    $selection.MoveDown() | Out-Null
+    $selection.InsertNewPage()
+    #endregion ReportWMIWinSat
 
     #region ReportWMINetworkAdapterConfiguration
     # BASIC
@@ -8271,6 +8396,8 @@ Write-Output "[INFO] Script running in $mode mode."
 
 #region CompleteMessage
     ### DISPLAY COMPLETE MESSAGE ###
+    Write-Output ""
+
     if($warnings -eq 0){
     Write-Output "[INFO] Script complete with $warnings warnings, in $($sw.Elapsed.Hours) hours, $($sw.Elapsed.Minutes) minutes, $($sw.Elapsed.Seconds) seconds."
     }
@@ -8280,6 +8407,8 @@ Write-Output "[INFO] Script running in $mode mode."
     else{
     Write-Output "[WARNING] Script complete with $warnings warnings, in $($sw.Elapsed.Hours) hours, $($sw.Elapsed.Minutes) minutes, $($sw.Elapsed.Seconds) seconds."
     }
+
+Write-Output ""
 #endregion CompleteMessage
 
 #region Comments
