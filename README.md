@@ -1,4 +1,4 @@
-# (BETA) Get-Win10Info
+# Get-Win10Info
 
 This PowerShell script gathers information from either a local or remote Windows 10 computer and produces a word report with that information.
 
