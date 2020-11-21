@@ -47,12 +47,13 @@ https://github.com/gordonrankine/get-win10info
 License:            MIT License
 Compatibility:      Windows 10
 Author:             Gordon Rankine
-Date:               31/10/2020
-Version:            1.1
+Date:               21/11/2020
+Version:            1.2
 PSSscriptAnalyzer:  Pass (with caveat). Run ScriptAnalyzer with PSAvoidUsingWMICmdlet. WMI over CIM as WMI is more versatile than CIM.
 Change Log:         Version  Date        Author          Comments
                     1.0      29/09/2019  Gordon Rankine  Initial script
                     1.1      31/10/2020  Gordon Rankine  Added Window System Assessment Tool (win32_winsat). Added blank lines to either side of script complete message.
+                    1.2      21/11/2020  Gordon Rankine  Added Computer Certificates (System.Security.Cryptography.X509Certificates.X509Store).
 
 #>
 
@@ -1502,6 +1503,75 @@ Write-Output "[INFO] Script running in $mode mode."
         }
         #endregion GatherRegistryInstalledPrograms
 
+        #region GatherComputerCertificates
+        try{
+        Write-Output "[INFO] Getting computer certificates from certificates store."
+        # Get all stores in use from the registry
+        $reg = [Microsoft.Win32.RegistryKey]::OpenRemoteBaseKey('LocalMachine', $endpoint)
+        $key = "SOFTWARE\\Microsoft\\SystemCertificates"
+        $openSubKey = $reg.OpenSubKey($key)
+        $subKeys = $openSubKey.GetSubKeyNames()
+
+        $cryptOpenFlags = [System.Security.Cryptography.X509Certificates.OpenFlags]"ReadOnly"
+        $cryptStoreLocation=[System.Security.Cryptography.X509Certificates.StoreLocation]"LocalMachine"
+
+        Add-Content $outfile "$tab<computer_certificates>"
+
+            foreach ($sub in $subKeys){
+
+            # Open each store as identified in the registry
+            $store = New-Object System.Security.Cryptography.X509Certificates.X509Store("\\$endpoint\$sub",$cryptStoreLocation)
+            $store.Open($cryptOpenFlags)
+            $storeCerts = $store.Certificates
+
+                foreach($storeCert in $storeCerts){
+
+                # Get content up until 1st ',' then replace CN, OU etc...
+                $storeSubjectCleaned = (((($storeCert.Subject).split(',')[0] -replace "CN=", "") -replace "OU=", "") -replace "E=", "") -replace "`"", ""
+
+                    # Get content up until 1st ',' then replace CN, OU etc...
+                    if (($storeCert.Issuer).Length -ne 0){
+                    $storeIssuerCleaned = (((($storeCert.Issuer).split(',')[0] -replace "CN=", "") -replace "OU=", "") -replace "E=", "") -replace "`"", ""
+                    }
+                    else{
+                    $storeIssuerCleaned = ""
+                    }
+
+                Add-Content $outfile "$tab$tab<computer_certificates_multi>"
+                Add-Content $outfile "$tab$tab$tab<store>$sub</store>"
+                Add-Content $outfile "$tab$tab$tab<subject>$storeSubjectCleaned</subject>"
+                Add-Content $outfile "$tab$tab$tab<issuer>$storeIssuerCleaned</issuer>"
+                Add-Content $outfile "$tab$tab$tab<validfrom>$($storeCert.GetEffectiveDateString())</validfrom>"
+                Add-Content $outfile "$tab$tab$tab<expiration>$($storeCert.GetExpirationDateString())</expiration>"
+                Add-Content $outfile "$tab$tab$tab<thumbprint>$($storeCert.Thumbprint)</thumbprint>"
+                Add-Content $outfile "$tab$tab$tab<serialnumber>$($storeCert.SerialNumber)</serialnumber>"
+                Add-Content $outfile "$tab$tab$tab<format>$($storeCert.GetFormat())</format>"
+                Add-Content $outfile "$tab$tab$tab<version>$($storeCert.Version)</version>"
+                Add-Content $outfile "$tab$tab$tab<signaturealgorithmfriendlyname>$($storeCert.SignatureAlgorithm.FriendlyName)</signaturealgorithmfriendlyname>"
+                Add-Content $outfile "$tab$tab$tab<signaturealgorithmvalue>$($storeCert.SignatureAlgorithm.Value)</signaturealgorithmvalue>"
+                Add-Content $outfile "$tab$tab$tab<enhancedkeyusagelistfriendlyname>$($storeCert.EnhancedKeyUsageList.FriendlyName)</enhancedkeyusagelistfriendlyname>"
+                Add-Content $outfile "$tab$tab$tab<archived>$($storeCert.Archived)</archived>"
+                Add-Content $outfile "$tab$tab$tab<hasprivatekey>$($storeCert.HasPrivateKey)</hasprivatekey>"
+                Add-Content $outfile "$tab$tab$tab<friendlyname>$($storeCert.FriendlyName)</friendlyname>"
+                Add-Content $outfile "$tab$tab</computer_certificates_multi>"
+
+                }
+
+            }
+
+        Add-Content $outfile "$tab</computer_certificates>"
+
+        }
+        catch{
+        Add-Content $outfile "$tab<computer_certificates>"
+        Add-Content $outfile "$tab$tab<errorcode>1</errorcode>"
+        Add-Content $outfile "$tab$tab<errortext>$_.Exception.Message</errortext>"
+        Add-Content $outfile "$tab</computer_certificates>"
+        Write-Output "[WARNING] There was an unexpected error while getting the computer certificate details. Moving on to next section..."
+        $warnings ++
+        }
+        #endregion GatherComputerCertificates
+
     #region GatherEnd
     # Close end tag
     Add-Content $outfile "</info>"
@@ -2418,7 +2488,7 @@ Write-Output "[INFO] Script running in $mode mode."
 
             # If bit is set, map value to $mapping. 16 bit binary number (left to right)
             # https://docs.microsoft.com/en-gb/windows/desktop/WmiSdk/bitmap-and-bitvalues
-            # Decimal 32768, Binary 1000 0000 0000 0000‬
+            # Decimal 32768, Binary 1000 0000 0000 0000â€¬
             if($chars[0] -eq "1"){
             $mapping = New-Object System.Object
             $mapping | Add-Member -type NoteProperty -name Name -Value "- [NOT USED].`r`n"
@@ -8031,7 +8101,7 @@ Write-Output "[INFO] Script running in $mode mode."
 
     $selection.EndOf(15) | Out-Null
     $selection.MoveDown() | Out-Null
-    #$selection.InsertNewPage() ### Dont include for last item in report (Basic) ###
+    $selection.InsertNewPage()
 
         # Only include if Detailed is selected.
         if($reportType -eq "Detailed"){
@@ -8349,9 +8419,246 @@ Write-Output "[INFO] Script running in $mode mode."
 
     $selection.EndOf(15) | Out-Null
     $selection.MoveDown() | Out-Null
-    #$selection.InsertNewPage() ### Dont include for last item in report (Detailed) ###
+    $selection.InsertNewPage()
     }
     #endregion ReportWMIPNPEntity
+
+    #region ReportCertificates
+    # BASIC & DETAILED
+    $selection.style = 'Heading 1'
+    $selection.TypeText("[System] Computer Certificates")
+    $selection.TypeParagraph()
+    $selection.TypeParagraph()
+
+    $selection.Style = 'Normal'
+    $selection.TypeText("This data is collected from the System.Security.Cryptography.X509Certificates.X509Store. For more information please go to https://docs.microsoft.com/en-us/dotnet/api/system.security.cryptography.x509certificates.x509store?view=net-5.0")
+    $selection.TypeParagraph()
+    $selection.TypeParagraph()
+
+
+        if($reportType -ne 'Basic'){
+        $selection.style = 'Heading 2'
+        $selection.TypeText("Basic")
+        $selection.TypeParagraph()
+        $selection.TypeParagraph()
+        }
+
+        if(($xml.info.computer_certificates).count -eq 0){
+        Write-Output "[WARNING] System Computer Certificte (Basic) details not found. Moving on to next section..."
+        $warnings ++
+        $selection.Style = 'Normal'
+        $selection.Font.Color="255"
+        $selection.TypeText("[WARNING] System Computer Certificate (Basic) data not found!")
+        $selection.TypeParagraph()
+        }
+        elseif(($xml.info.computer_certificates.errorcode) -eq 1){
+        Write-Output "[WARNING] System Computer Certificate (Basic) details not collected. Moving on to next section..."
+        $warnings ++
+        $selection.Style = 'Normal'
+        $selection.Font.Color="255"
+        $selection.TypeText("[WARNING] System Computer Certificate (Basic) data not collected!")
+        $selection.TypeParagraph()
+        $selection.TypeText("Reason for error: $($xml.info.computer_certificates.errortext)")
+        $selection.TypeParagraph()
+        }
+        else{
+        Write-Output "[INFO] Populating System Computer Certificate (Basic) table."
+
+        # Count rows in multi
+        $multis = $xml.selectnodes("//info/computer_certificates/computer_certificates_multi")
+        $count = ($multis | Measure-Object).Count
+
+            # Calculate rows (from query above) and add 1 for the header
+            if($count -eq 0){
+            $rows = $count + 2
+            }
+            else{
+            $rows = $count + 1
+            }
+
+        $table = $selection.Tables.add(
+        $selection.Range,
+        $rows,
+        5,
+        [Microsoft.Office.Interop.Word.WdDefaultTableBehavior]::wdWord9TableBehavior,
+        [Microsoft.Office.Interop.Word.WdAutoFitBehavior]::wdAutoFitWindow
+        )
+
+        $table.style = "Grid Table 4 - Accent 1"
+        $table.cell(1,1).range.text = "Store"
+        $table.cell(1,2).range.text = "Subject"
+        $table.cell(1,3).range.text = "Issuer"
+        $table.cell(1,4).range.text = "Valid From"
+        $table.cell(1,5).range.text = "Expiration"
+
+        $i = 2 # 2 as header is row 1
+
+            foreach($multi in $multis){
+
+            $table.cell($i,1).range.text = $multi.store
+            $table.cell($i,2).range.text = $multi.subject
+            $table.cell($i,3).range.text = $multi.issuer
+            $table.cell($i,4).range.text = $multi.validfrom
+            $table.cell($i,5).range.text = $multi.expiration
+            $i++
+
+            }
+
+        $table.Rows.item(1).Headingformat=-1
+        $table.ApplyStyleFirstColumn = $false
+        $selection.InsertCaption(-2, ": [System] Computer Certificates (Basic)", $null, 1, $false)
+
+          if($reportType -ne "Basic"){
+          $selection.TypeParagraph()
+          }
+
+        }
+
+    $selection.EndOf(15) | Out-Null
+    $selection.MoveDown() | Out-Null
+
+        if($reportType -eq "Detailed"){
+        $selection.TypeParagraph()
+        $selection.style = 'Heading 2'
+        $selection.TypeText("Detailed")
+        $selection.TypeParagraph()
+        $selection.TypeParagraph()
+
+            if(($xml.info.computer_certificates).count -eq 0){
+            Write-Output "[WARNING] System Computer Certificates (Detailed) details not found. Moving on to next section..."
+            $warnings ++
+            $selection.Style = 'Normal'
+            $selection.Font.Color="255"
+            $selection.TypeText("[WARNING] System Computer Certificates (Detailed) data not found!")
+            $selection.TypeParagraph()
+            }
+            elseif(($xml.info.computer_certificates.errorcode) -eq 1){
+            Write-Output "[WARNING] System Computer Certificates (Detailed) details not collected. Moving on to next section..."
+            $warnings ++
+            $selection.Style = 'Normal'
+            $selection.Font.Color="255"
+            $selection.TypeText("[WARNING] System Computer Certificates (Detailed) data not collected!")
+            $selection.TypeParagraph()
+            $selection.TypeText("Reason for error: $($xml.info.computer_certificates.errortext)")
+            $selection.TypeParagraph()
+            }
+            else{
+            Write-Output "[INFO] Populating System Computer Certificates (Detailed) table."
+
+            # Count rows in multi
+            $multis = $xml.selectnodes("//info/computer_certificates/computer_certificates_multi")
+            $count = ($multis | Measure-Object).Count
+
+                # Calculate rows. (No of items x no of multis) + (no of multis + 1 (for header)) | or less 1 for header if single row
+                if($count -eq 0){
+                $rows = $count + 2
+                }
+                elseif($count -eq 1){
+                $rows = (15 + $count)
+                }
+                else{
+                $rows = (15 * $count) + ($count + 1)
+                }
+
+            $table = $selection.Tables.add(
+            $selection.Range,
+            $rows,
+            2,
+            [Microsoft.Office.Interop.Word.WdDefaultTableBehavior]::wdWord9TableBehavior,
+            [Microsoft.Office.Interop.Word.WdAutoFitBehavior]::wdAutoFitWindow
+            )
+
+            $table.style = "Grid Table 4 - Accent 1"
+            $table.cell(1,1).range.text = "Item"
+            $table.cell(1,2).range.text = "Value"
+
+            $i = 2 # 2 as header is row 1
+            $y = 1
+
+                foreach($multi in $multis){
+
+                    if($count -gt 1){
+                    $table.cell($i,1).Merge($table.cell($i, 2))
+                    $table.cell($i,1).range.text = "------ BLOCK $y ------"
+                    $i++
+                    }
+
+                $table.cell($i,1).range.text = "Store"
+                $table.cell($i,2).range.text = $multi.store
+                $i++
+
+                $table.cell($i,1).range.text = "Subject"
+                $table.cell($i,2).range.text = $multi.subject
+                $i++
+
+                $table.cell($i,1).range.text = "Issuer"
+                $table.cell($i,2).range.text = $multi.issuer
+                $i++
+
+                $table.cell($i,1).range.text = "Valid From"
+                $table.cell($i,2).range.text = $multi.validfrom
+                $i++
+
+                $table.cell($i,1).range.text = "Expiration"
+                $table.cell($i,2).range.text = $multi.expiration
+                $i++
+
+                $table.cell($i,1).range.text = "Thumbprint"
+                $table.cell($i,2).range.text = $multi.thumbprint
+                $i++
+
+                $table.cell($i,1).range.text = "Serial Number"
+                $table.cell($i,2).range.text = $multi.serialnumber
+                $i++
+
+                $table.cell($i,1).range.text = "Format"
+                $table.cell($i,2).range.text = $multi.format
+                $i++
+
+                $table.cell($i,1).range.text = "Version"
+                $table.cell($i,2).range.text = $multi.version
+                $i++
+
+                $table.cell($i,1).range.text = "Signature Algorithm Friendly Name"
+                $table.cell($i,2).range.text = $multi.signaturealgorithmfriendlyname
+                $i++
+
+                $table.cell($i,1).range.text = "Signature Algorithm Value"
+                $table.cell($i,2).range.text = $multi.signaturealgorithmvalue
+                $i++
+
+                $table.cell($i,1).range.text = "Enhanced Key Usage List Friendly Name"
+                $table.cell($i,2).range.text = $multi.enhancedkeyusagelistfriendlyname
+                $i++
+
+                $table.cell($i,1).range.text = "Archived"
+                $table.cell($i,2).range.text = $multi.archived
+                $i++
+
+                $table.cell($i,1).range.text = "Has Private Key"
+                $table.cell($i,2).range.text = $multi.hasprivatekey
+                $i++
+
+                $table.cell($i,1).range.text = "Friendly Name"
+                $table.cell($i,2).range.text = $multi.friendlyname
+                $i++
+
+                $y++
+
+                }
+
+            $table.Rows.item(1).Headingformat=-1
+            $table.ApplyStyleFirstColumn = $false
+            $selection.InsertCaption(-2, ": [System] Computer Certificates (Detailed)", $null, 1, $false)
+
+            }
+
+        }
+
+    $selection.EndOf(15) | Out-Null
+    $selection.MoveDown() | Out-Null
+    $selection.InsertNewPage()
+    #endregion ReportCertificates
 
     #region ReportFinalise
     ### UPDATE TABLE OF CONTENTS ###
