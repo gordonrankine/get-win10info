@@ -47,13 +47,14 @@ https://github.com/gordonrankine/get-win10info
 License:            MIT License
 Compatibility:      Windows 10
 Author:             Gordon Rankine
-Date:               21/11/2020
-Version:            1.2
-PSSscriptAnalyzer:  Pass (with caveat). Run ScriptAnalyzer with PSAvoidUsingWMICmdlet. WMI over CIM as WMI is more versatile than CIM.
+Date:               28/04/2021
+Version:            1.3
+PSScriptAnalyzer:  Pass (with caveat). Run ScriptAnalyzer with PSAvoidUsingWMICmdlet. WMI over CIM as WMI is more versatile than CIM.
 Change Log:         Version  Date        Author          Comments
                     1.0      29/09/2019  Gordon Rankine  Initial script
                     1.1      31/10/2020  Gordon Rankine  Added Window System Assessment Tool (win32_winsat). Added blank lines to either side of script complete message.
                     1.2      21/11/2020  Gordon Rankine  Added Computer Certificates (System.Security.Cryptography.X509Certificates.X509Store).
+                    1.3      28/04/2021  Gordon Rankine  Added Power Plan (win32_powerplan).
 
 #>
 
@@ -1572,6 +1573,33 @@ Write-Output "[INFO] Script running in $mode mode."
         }
         #endregion GatherComputerCertificates
 
+       #region GatherWMIPowerPlan
+        $class = "win32_powerplan" # Multi item class
+        try{
+        Write-Output "[INFO] Getting details from class $class."
+        $props = ('elementname', 'description', 'instanceid', 'isactive')
+        $wmi = Get-WmiObject -Namespace root/cimv2/power -Class $class -ComputerName $endpoint -ErrorAction Stop | Select-Object $props | Sort-Object elementname
+        Add-Content $outfile "$tab<$class>"
+            foreach($wm in $wmi){
+            Add-Content $outfile "$tab$tab<$class`_multi>"
+                Add-Content $outfile "$tab$tab$tab<elementname>$($wm.elementname)</elementname>"
+                Add-Content $outfile "$tab$tab$tab<description>$($wm.description)</description>"
+                Add-Content $outfile "$tab$tab$tab<instanceid>$($wm.instanceid)</instanceid>"
+                Add-Content $outfile "$tab$tab$tab<isactive>$($wm.isactive)</isactive>"
+            Add-Content $outfile "$tab$tab</$class`_multi>"
+            }
+        Add-Content $outfile "$tab</$class>"
+        }
+        catch{
+        Add-Content $outfile "$tab<$class>"
+        Add-Content $outfile "$tab$tab<errorcode>1</errorcode>"
+        Add-Content $outfile "$tab$tab<errortext>$_.Exception.Message</errortext>"
+        Add-Content $outfile "$tab</$class>"
+        Write-Output "[WARNING] There was an unexpected error while getting the $class class. Moving on to next section..."
+        $warnings ++
+        }
+        #endregion GatherWMIPowerPlan
+
     #region GatherEnd
     # Close end tag
     Add-Content $outfile "</info>"
@@ -2899,7 +2927,7 @@ Write-Output "[INFO] Script running in $mode mode."
             $winSatAssessmentState = "$winSatAssessmentState [UNKNOWN]"
             }
 
-        $table.cell(8,2).range.text = $winSatAssessmentState
+        $table.cell(8,2).range.text = "$winSatAssessmentState"
 
         $table.cell(9,1).range.text = "Win SPR Level"
         $table.cell(9,2).range.text = $xml.info.win32_winsat.winsprlevel
@@ -8659,6 +8687,107 @@ Write-Output "[INFO] Script running in $mode mode."
     $selection.MoveDown() | Out-Null
     $selection.InsertNewPage()
     #endregion ReportCertificates
+
+    #region ReportWMIPowerPlan
+    # BASIC
+    $selection.style = 'Heading 1'
+    $selection.TypeText("[WMI] Power Plan")
+    $selection.TypeParagraph()
+    $selection.TypeParagraph()
+
+    $selection.Style = 'Normal'
+    $selection.TypeText("This data is collected from the Win32_PowerPlan WMI class. For more information please go to https://docs.microsoft.com/en-us/previous-versions/windows/desktop/legacy/dd904531(v=vs.85)")
+    $selection.TypeParagraph()
+    $selection.Style = 'Normal'
+
+        if(($xml.info.win32_powerplan).count -eq 0){
+        Write-Output "[WARNING] WMI Power Plan details not found. Moving on to next section..."
+        $warnings ++
+        $selection.Style = 'Normal'
+        $selection.Font.Color="255"
+        $selection.TypeText("[WARNING] WMI Power Plan data not found!")
+        $selection.TypeParagraph()
+        }
+        elseif(($xml.info.win32_powerplan.errorcode) -eq 1){
+        Write-Output "[WARNING] WMI Power Plan details not collected. Moving on to next section..."
+        $warnings ++
+        $selection.Style = 'Normal'
+        $selection.Font.Color="255"
+        $selection.TypeText("[WARNING] WMI Power data not collected!")
+        $selection.TypeParagraph()
+        $selection.TypeText("Reason for error: $($xml.info.win32_powerplan.errortext)")
+        $selection.TypeParagraph()
+        }
+        else{
+        Write-Output "[INFO] Populating WMI Power Plan table."
+
+        # Count rows in multi
+        $multis = $xml.selectnodes("//info/win32_powerplan/win32_powerplan_multi")
+        $count = ($multis | Measure-Object).Count
+
+            # Calculate rows. (No of items x no of multis) + (no of multis + 1 (for header)) | or less 1 for header if single row
+            if($count -eq 1){
+            $rows = (4 + $count)
+            }
+            else{
+            $rows = (4 * $count) + ($count + 1)
+            }
+
+        $table = $selection.Tables.add(
+        $selection.Range,
+        $rows,
+        2,
+        [Microsoft.Office.Interop.Word.WdDefaultTableBehavior]::wdWord9TableBehavior,
+        [Microsoft.Office.Interop.Word.WdAutoFitBehavior]::wdAutoFitWindow
+        )
+
+        $table.style = "Grid Table 4 - Accent 1"
+        $table.cell(1,1).range.text = "Item"
+        $table.cell(1,2).range.text = "Value"
+
+        $i = 2 # 2 as header is row 1
+        $y = 1
+
+            foreach($multi in $multis){
+
+                if($count -gt 1){
+                $table.cell($i,1).Merge($table.cell($i, 2))
+                $table.cell($i,1).range.text = "------ BLOCK $y ------"
+                $i++
+                }
+
+            $table.cell($i,1).range.text = "Element Name"
+            $table.cell($i,2).range.text = $multi.elementname
+
+            $i++
+
+            $table.cell($i,1).range.text = "Description"
+            $table.cell($i,2).range.text = $multi.description
+            $i++
+
+            $table.cell($i,1).range.text = "Instance ID"
+            $table.cell($i,2).range.text = $multi.instanceid
+            $i++
+
+            $table.cell($i,1).range.text = "Is Active"
+            $table.cell($i,2).range.text = $multi.isactive
+
+            $i++
+
+            $y++
+
+            }
+
+        $table.Rows.item(1).Headingformat=-1
+        $table.ApplyStyleFirstColumn = $false
+        $selection.InsertCaption(-2, ": [WMI] Power Plan", $null, 1, $false)
+
+        }
+
+    $selection.EndOf(15) | Out-Null
+    $selection.MoveDown() | Out-Null
+    $selection.InsertNewPage()
+    #endregion ReportWMIPowerPlan
 
     #region ReportFinalise
     ### UPDATE TABLE OF CONTENTS ###
