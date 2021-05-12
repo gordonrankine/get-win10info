@@ -38,7 +38,7 @@ Runs the script in GatherAndReport mode which will save a basic report to c:\tem
 Runs the script in GatherOnly and collects details from the remote endpoint PC01.
 
 .\Get-Win10Info.ps1 -outDir "c:\temp" -mode ReportOnly -xmlFile c:\temp\PC01_201909291709.xml -ReportType Detailed
-Runs the script in ReportOnly mode and generates a detailed report using GR001_201909291709.xml.
+Runs the script in ReportOnly mode and generates a detailed report using PC01_201909291709.xml.
 
 .LINK
 https://github.com/gordonrankine/get-win10info
@@ -47,14 +47,15 @@ https://github.com/gordonrankine/get-win10info
 License:            MIT License
 Compatibility:      Windows 10
 Author:             Gordon Rankine
-Date:               28/04/2021
-Version:            1.3
+Date:               12/05/2021
+Version:            1.4
 PSScriptAnalyzer:  Pass (with caveat). Run ScriptAnalyzer with PSAvoidUsingWMICmdlet. WMI over CIM as WMI is more versatile than CIM.
 Change Log:         Version  Date        Author          Comments
                     1.0      29/09/2019  Gordon Rankine  Initial script
                     1.1      31/10/2020  Gordon Rankine  Added Window System Assessment Tool (win32_winsat). Added blank lines to either side of script complete message.
                     1.2      21/11/2020  Gordon Rankine  Added Computer Certificates (System.Security.Cryptography.X509Certificates.X509Store).
                     1.3      28/04/2021  Gordon Rankine  Added Power Plan (win32_powerplan).
+                    1.4      12/05/2021  Gordon Rankine  Added Software Licensing Product (softwarelicensingproduct). Fixed operatingsystem.operatingsystemsku error, 450 changed to 45 and added 48 (was missing).
 
 #>
 
@@ -1600,6 +1601,34 @@ Write-Output "[INFO] Script running in $mode mode."
         }
         #endregion GatherWMIPowerPlan
 
+       #region GatherWMISoftwareLicensingProduct
+        $class = "softwarelicensingproduct" # Multi item class
+        try{
+        Write-Output "[INFO] Getting details from class $class."
+        $props = ('description', 'licensefamily', 'name', 'partialproductkey', 'productkeychannel')
+        $wmi = Get-WmiObject -Namespace root/cimv2 -Class $class -ComputerName $endpoint -ErrorAction Stop | Where-Object {$_.LicenseStatus -eq 1} | Select-Object $props | Sort-Object name
+        Add-Content $outfile "$tab<$class>"
+            foreach($wm in $wmi){
+            Add-Content $outfile "$tab$tab<$class`_multi>"
+                Add-Content $outfile "$tab$tab$tab<description>$($wm.description)</description>"
+                Add-Content $outfile "$tab$tab$tab<licensefamily>$($wm.licensefamily)</licensefamily>"
+                Add-Content $outfile "$tab$tab$tab<name>$($wm.name)</name>"
+                Add-Content $outfile "$tab$tab$tab<partialproductkey>$($wm.partialproductkey)</partialproductkey>"
+                Add-Content $outfile "$tab$tab$tab<productkeychannel>$($wm.productkeychannel)</productkeychannel>"
+            Add-Content $outfile "$tab$tab</$class`_multi>"
+            }
+        Add-Content $outfile "$tab</$class>"
+        }
+        catch{
+        Add-Content $outfile "$tab<$class>"
+        Add-Content $outfile "$tab$tab<errorcode>1</errorcode>"
+        Add-Content $outfile "$tab$tab<errortext>$_.Exception.Message</errortext>"
+        Add-Content $outfile "$tab</$class>"
+        Write-Output "[WARNING] There was an unexpected error while getting the $class class. Moving on to next section..."
+        $warnings ++
+        }
+        #endregion GatherWMISoftwareLicensingProduct
+
     #region GatherEnd
     # Close end tag
     Add-Content $outfile "</info>"
@@ -2453,11 +2482,14 @@ Write-Output "[INFO] Script running in $mode mode."
             elseif($xml.info.win32_operatingsystem.operatingsystemsku -eq 44){
             $sku = "Storage Server Standard Edition (Server Core installation)"
             }
-            elseif($xml.info.win32_operatingsystem.operatingsystemsku -eq 450){
+            elseif($xml.info.win32_operatingsystem.operatingsystemsku -eq 45){
             $sku = "Storage Server Workgroup Edition (Server Core installation)"
             }
             elseif($xml.info.win32_operatingsystem.operatingsystemsku -eq 46){
             $sku = "Storage Server Enterprise Edition (Server Core installation)"
+            }
+            elseif($xml.info.win32_operatingsystem.operatingsystemsku -eq 48){
+            $sku = "Windows Professional"
             }
             elseif($xml.info.win32_operatingsystem.operatingsystemsku -eq 50){
             $sku = "Windows Server Essentials (Desktop Experience installation)"
@@ -8713,7 +8745,7 @@ Write-Output "[INFO] Script running in $mode mode."
         $warnings ++
         $selection.Style = 'Normal'
         $selection.Font.Color="255"
-        $selection.TypeText("[WARNING] WMI Power data not collected!")
+        $selection.TypeText("[WARNING] WMI Power Plan data not collected!")
         $selection.TypeParagraph()
         $selection.TypeText("Reason for error: $($xml.info.win32_powerplan.errortext)")
         $selection.TypeParagraph()
@@ -8758,7 +8790,6 @@ Write-Output "[INFO] Script running in $mode mode."
 
             $table.cell($i,1).range.text = "Element Name"
             $table.cell($i,2).range.text = $multi.elementname
-
             $i++
 
             $table.cell($i,1).range.text = "Description"
@@ -8771,7 +8802,6 @@ Write-Output "[INFO] Script running in $mode mode."
 
             $table.cell($i,1).range.text = "Is Active"
             $table.cell($i,2).range.text = $multi.isactive
-
             $i++
 
             $y++
@@ -8788,6 +8818,109 @@ Write-Output "[INFO] Script running in $mode mode."
     $selection.MoveDown() | Out-Null
     $selection.InsertNewPage()
     #endregion ReportWMIPowerPlan
+
+    #region ReportWMISoftwareLicensingProduct
+    # BASIC
+    $selection.style = 'Heading 1'
+    $selection.TypeText("[WMI] Software Licensing Product")
+    $selection.TypeParagraph()
+    $selection.TypeParagraph()
+
+    $selection.Style = 'Normal'
+    $selection.TypeText("This data is collected from the SoftwareLicensingProduct WMI class. For more information please go to https://docs.microsoft.com/en-us/previous-versions/windows/desktop/sppwmi/softwarelicensingproduct")
+    $selection.TypeParagraph()
+    $selection.Style = 'Normal'
+
+        if(($xml.info.softwarelicensingproduct).count -eq 0){
+        Write-Output "[WARNING] WMI Software Licensing Product details not found. Moving on to next section..."
+        $warnings ++
+        $selection.Style = 'Normal'
+        $selection.Font.Color="255"
+        $selection.TypeText("[WARNING] WMI Software Licensing Product data not found!")
+        $selection.TypeParagraph()
+        }
+        elseif(($xml.info.softwarelicensingproduct.errorcode) -eq 1){
+        Write-Output "[WARNING] WMI Software Licensing Product details not collected. Moving on to next section..."
+        $warnings ++
+        $selection.Style = 'Normal'
+        $selection.Font.Color="255"
+        $selection.TypeText("[WARNING] WMI Software Licensing Product data not collected!")
+        $selection.TypeParagraph()
+        $selection.TypeText("Reason for error: $($xml.info.softwarelicensingproduct.errortext)")
+        $selection.TypeParagraph()
+        }
+        else{
+        Write-Output "[INFO] Populating WMI Software Licensing Product table."
+
+        # Count rows in multi
+        $multis = $xml.selectnodes("//info/softwarelicensingproduct/softwarelicensingproduct_multi")
+        $count = ($multis | Measure-Object).Count
+
+            # Calculate rows. (No of items x no of multis) + (no of multis + 1 (for header)) | or less 1 for header if single row
+            if($count -eq 1){
+            $rows = (5 + $count)
+            }
+            else{
+            $rows = (5 * $count) + ($count + 1)
+            }
+
+        $table = $selection.Tables.add(
+        $selection.Range,
+        $rows,
+        2,
+        [Microsoft.Office.Interop.Word.WdDefaultTableBehavior]::wdWord9TableBehavior,
+        [Microsoft.Office.Interop.Word.WdAutoFitBehavior]::wdAutoFitWindow
+        )
+
+        $table.style = "Grid Table 4 - Accent 1"
+        $table.cell(1,1).range.text = "Item"
+        $table.cell(1,2).range.text = "Value"
+
+        $i = 2 # 2 as header is row 1
+        $y = 1
+
+            foreach($multi in $multis){
+
+                if($count -gt 1){
+                $table.cell($i,1).Merge($table.cell($i, 2))
+                $table.cell($i,1).range.text = "------ BLOCK $y ------"
+                $i++
+                }
+
+            $table.cell($i,1).range.text = "Name"
+            $table.cell($i,2).range.text = $multi.name
+            $i++
+
+            $table.cell($i,1).range.text = "Description"
+            $table.cell($i,2).range.text = $multi.description
+            $i++
+
+            $table.cell($i,1).range.text = "License Family"
+            $table.cell($i,2).range.text = $multi.licensefamily
+            $i++
+
+            $table.cell($i,1).range.text = "Partial Product Key"
+            $table.cell($i,2).range.text = $multi.partialproductkey
+            $i++
+
+            $table.cell($i,1).range.text = "Product Key Channel"
+            $table.cell($i,2).range.text = $multi.productkeychannel
+            $i++
+
+            $y++
+
+            }
+
+        $table.Rows.item(1).Headingformat=-1
+        $table.ApplyStyleFirstColumn = $false
+        $selection.InsertCaption(-2, ": [WMI] Software Licensing Product", $null, 1, $false)
+
+        }
+
+    $selection.EndOf(15) | Out-Null
+    $selection.MoveDown() | Out-Null
+    $selection.InsertNewPage()
+    #endregion ReportWMISoftwareLicensingProduct
 
     #region ReportFinalise
     ### UPDATE TABLE OF CONTENTS ###
